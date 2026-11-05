@@ -21,7 +21,6 @@ import urllib.request
 from pathlib import Path
 
 ARCHIVES = (".zip", ".rar", ".7z")
-BASE_ID = 0x0100152000022000
 
 
 def log(msg):
@@ -162,29 +161,29 @@ def nsp_info(nxfs, keys, nsp):
     return ncas
 
 
+# Title ids in file names: the base game, the 4.0.1 update and the Booster Course Pass.
+# Update NCAs carry the base game's program id, so nxfs can't tell base and update apart;
+# the name's title id can.
+TITLE_KINDS = {"0100152000022000": "base", "0100152000022800": "update", "0100152000023001": "dlc"}
+
+
 def classify(nsps, nxfs, keys):
     found = {}
     unsure = []
     for p in nsps:
-        info = nsp_info(nxfs, keys, p)
-        kind = None
-        if info:
-            types = {t for t, _ in info}
-            progs = [pid for t, pid in info if t == "Program"]
-            if "PublicData" in types:
+        kind = next((k for tid, k in TITLE_KINDS.items() if tid in p.name), None)
+        if kind is None:
+            info = nsp_info(nxfs, keys, p)
+            if info and "PublicData" in {t for t, _ in info}:
                 kind = "dlc"
-            elif progs and progs[0] & 0xFFF == 0x800:
-                kind = "update"
-            elif progs and progs[0] & 0xFFF == 0:
-                kind = "base"
-            if progs and progs[0] & ~0xFFF != BASE_ID:
-                log(f"  warning: {p.name} is title {progs[0]:016x}, not Mario Kart 8 Deluxe")
-        if not kind:
+        if kind is None:
             n = p.name.lower()
-            if re.search(r"dlc|booster|add.?on|0100152000023", n):
+            if re.search(r"dlc|booster|add.?on", n):
                 kind = "dlc"
-            elif re.search(r"upd|update|patch|0100152000022800|\[v[1-9]\d*\]|v4\.0\.1|v3\.0\.5", n):
+            elif re.search(r"upd|update|patch|\[v[1-9]\d*\]|v4\.0\.1|v3\.0\.5", n):
                 kind = "update"
+            elif re.search(r"base|\[v0\]", n):
+                kind = "base"
         if kind:
             log(f"  {p.name}: {kind}")
             if kind in found:
