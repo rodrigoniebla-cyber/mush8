@@ -135,7 +135,12 @@ def extract_all(root):
             done.add(arc)
             out = arc.parent / (re.sub(r"(\.part\d+)?\.(zip|rar|7z)(\.\d{3})?$", "", arc.name, flags=re.I) + ".unpacked")
             log(f"unpacking {arc.relative_to(root)}")
-            r = subprocess.run([sevenzip(), "x", "-y", "-bso0", "-bsp0", f"-o{out}", str(arc)])
+            if arc.name.lower().endswith(".rar") and shutil.which("unar"):
+                # Homebrew's 7-Zip is built without RAR support
+                cmd = ["unar", "-q", "-f", "-D", "-o", str(out), str(arc)]
+            else:
+                cmd = [sevenzip(), "x", "-y", "-bso0", "-bsp0", f"-o{out}", str(arc)]
+            r = subprocess.run(cmd)
             if r.returncode != 0:
                 fail(f"couldn't unpack {arc.name} (wrong password, damaged, or a volume is missing)")
             for v in volumes_of(arc):
