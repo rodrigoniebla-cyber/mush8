@@ -1,0 +1,120 @@
+# Builds Mush8.ipa on a GitHub macOS runner from your own game files.
+#
+# Game files can come from:
+#   - Google Drive links (files or folders shared as "Anyone with the link"),
+#     or any direct download URL, in the "links" box or the GAME_FILES_LINKS secret
+#   - files uploaded to a release of this repository (give its tag in "release")
+# Each can be a .nsp, prod.keys, or a .zip / .rar / .7z (split archives too)
+# holding them. Base game and update are told apart automatically.
+#
+# The .ipa contains the game's code, so this only runs in a private repository.
+name: Build iOS ipa
+
+on:
+  workflow_dispatch:
+    inputs:
+      links:
+        description: "Google Drive / direct links, separated by spaces or commas (leave empty to use the GAME_FILES_LINKS secret)"
+        required: false
+        default: ""
+      release:
+        description: "Tag of a release in this repo whose uploaded files to use (optional)"
+        required: false
+        default: ""
+      bundle_id:
+        description: "App bundle id"
+        required: false
+        default: "ch.cclerc.mush8"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-ipa
+  cancel-in-progress: false
+
+jobs:
+  ipa:
+    runs-on: macos-26
+    timeout-minutes: 360
+    env:
+      TOOLCHAIN: 1.98.1
+    steps:
+      - name: Refuse public repositories
+        if: ${{ !github.event.repository.private }}
+        run: |
+          echo "::error::This repository is public. The .ipa holds the game's code and anyone could download it from the run. Make the repository private (Settings > General > Danger Zone), then run this again."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          df -h /
+          sudo rm -rf ~/Library/Android /usr/local/share/dotnet /usr/local/lib/node_modules \
+            ~/.dotnet ~/.ghcup /opt/hostedtoolcache/CodeQL || true
+          xcrun simctl delete all || true
+          sudo rm -rf ~/Library/Developer/CoreSimulator/Caches || true
+          df -h /
+
+      - name: Tools
+        run: |
+          brew install xcodegen sevenzip
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install -q gdown==5.2.0
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+          rustup toolchain install "$TOOLCHAIN" --profile minimal
+          rustup target add aarch64-apple-ios --toolchain "$TOOLCHAIN"
+          xcodebuild -version
+          xcodebuild -downloadComponent MetalToolchain
+          xcodebuild -showsdks | grep -q iphoneos || xcodebuild -downloadPlatform iOS
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-${{ hashFiles('Cargo.lock') }}
+
+      - name: Build host tools
+        run: cargo build --release --locked
+
+      - name: Download uploaded release files
+        if: ${{ inputs.release != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release }}
+        run: |
+          mkdir -p work/uploads
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir work/uploads
+          ls -la work/uploads
+
+      - name: Fetch game files
+        env:
+          LINKS: ${{ inputs.links != '' && inputs.links || secrets.GAME_FILES_LINKS }}
+        run: |
+          if [ -z "$LINKS" ] && [ ! -d work/uploads ]; then
+            echo "::error::No game files: fill in links or release, or set the GAME_FILES_LINKS secret."
+            exit 1
+          fi
+          python3 -I tools/fetch-game-files.py --dest . --work work/download \
+            --local work/uploads --nxfs target/release/nxfs "$LINKS"
+          rm -rf work/uploads
+          ls -la *.nsp prod.keys
+          df -h /
+
+      - name: Build ipa
+        env:
+          BUNDLE_ID: ${{ inputs.bundle_id }}
+        run: ./make-ios.sh --ipa
+
+      - name: Show shader log
+        if: failure()
+        run: tail -50 work/precompile_ios.log 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mush8-ipa
+          path: build/Mush8.ipa
+          retention-days: 3
+          compression-level: 0

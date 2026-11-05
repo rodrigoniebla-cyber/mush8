@@ -56,6 +56,19 @@ Or make an `.ipa` to install with AltStore / SideStore :
 ```
 it ends up in `build/Mush8.ipa`
 
+### Building the .ipa on GitHub (no Mac needed)
+The `Build iOS ipa` workflow builds `Mush8.ipa` on a GitHub macOS runner. The `.ipa` holds the game's code, so it only runs in a **private** repository.
+
+1. Put your game files online, as `.nsp`, `prod.keys`, or `.zip` / `.rar` / `.7z` archives holding them (split archives such as `.part1.rar` or `.7z.001` work too). Either:
+   - upload them to Google Drive and share each file or folder as "Anyone with the link", or
+   - upload them to a release of your repository (Releases → Draft a new release → attach the files; each file must be under 2 GB, so split big archives)
+2. Actions → Build iOS ipa → Run workflow, and fill in:
+   - `links` : the Google Drive (or other direct download) links, separated by spaces or commas. To keep them out of the run page, store them in a `GAME_FILES_LINKS` repository secret and leave this empty
+   - `release` : the release's tag, if you uploaded files there
+3. When it's done (about an hour, mostly shaders), download `Mush8-ipa` from the run's Artifacts and install it with AltStore / SideStore. Artifacts are deleted after 3 days
+
+The base game, update and DLC are told apart automatically, whatever their names. The `.ipa` is built like `./make-ios.sh --ipa`, so you still copy `prod.keys`, `base.nsp` and the update into the app after installing it.
+
 Tests :
 ```
 cargo test --workspace
