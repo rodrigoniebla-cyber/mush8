@@ -39,8 +39,11 @@ fn main() {
             let seg = format!("__NX{i}_{kind}");
             let sym = format!("_nx_mod_{name}_{}", kind.to_lowercase());
             let len = hi.min(image.len() as u64).saturating_sub(lo);
-            let flags = if prot == "rx" { "regular,pure_instructions" } else { "regular" };
-            writeln!(asm, ".section {seg},__{},{flags}", if prot == "rx" { "text" } else { "data" }).unwrap();
+            // Plain data sections, not code: the segments get their rx/rw protection
+            // from -segprot. Marked as instructions, ld lists them in __unwind_info next
+            // to the host code, tens of MiB away, and asserts that the compressed
+            // function offset doesn't fit in 24 bits.
+            writeln!(asm, ".section {seg},__{},regular", if prot == "rx" { "code" } else { "data" }).unwrap();
             writeln!(asm, ".p2align 14\n.globl {sym}\n.no_dead_strip {sym}\n{sym}:").unwrap();
             if len > 0 {
                 writeln!(asm, ".incbin \"{}\", {lo:#x}, {len:#x}", bin.display()).unwrap();
