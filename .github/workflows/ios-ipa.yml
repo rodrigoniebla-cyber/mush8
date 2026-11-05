@@ -98,6 +98,11 @@ jobs:
         env:
           LINKS: ${{ inputs.links != '' && inputs.links || secrets.GAME_FILES_LINKS }}
         run: |
+          set -f
+          for l in $(printf '%s' "$LINKS" | tr ',' ' ') $(printf '%s' "$LINKS" | grep -oE '[A-Za-z0-9_-]{20,}'); do
+            echo "::add-mask::$l"
+          done
+          set +f
           if [ -z "$LINKS" ] && [ ! -d work/uploads ]; then
             echo "::error::No game files: fill in links or release, or set the GAME_FILES_LINKS secret."
             exit 1

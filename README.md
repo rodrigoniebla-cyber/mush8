@@ -63,7 +63,7 @@ The `Build iOS ipa` workflow builds `Mush8.ipa` on a GitHub macOS runner. The `.
    - upload them to Google Drive and share each file or folder as "Anyone with the link", or
    - upload them to a release of your repository (Releases → Draft a new release → attach the files; each file must be under 2 GB, so split big archives)
 2. Actions → Build iOS ipa → Run workflow, and fill in:
-   - `links` : the Google Drive (or other direct download) links, separated by spaces or commas. To keep them out of the run page, store them in a `GAME_FILES_LINKS` repository secret and leave this empty
+   - `links` : the Google Drive (or other direct download) links, separated by spaces or commas (hidden from the run logs). Or store them in a `GAME_FILES_LINKS` repository secret and leave this empty
    - `release` : the release's tag, if you uploaded files there
 3. When it's done (about an hour, mostly shaders), download `Mush8-ipa` from the run's Artifacts (open `Mush8-ipa.7z` with your `IPA_PASSWORD`, with Keka or The Unarchiver on a Mac, 7-Zip on Windows) and install it with AltStore / SideStore. Artifacts are deleted after 3 days
 
