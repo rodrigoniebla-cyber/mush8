@@ -7,7 +7,8 @@
 # Each can be a .nsp, prod.keys, or a .zip / .rar / .7z (split archives too)
 # holding them. Base game and update are told apart automatically.
 #
-# The .ipa contains the game's code, so this only runs in a private repository.
+# The .ipa contains the game's code. In a public repository it is only saved
+# inside a 7z archive encrypted with the IPA_PASSWORD secret (16+ characters).
 name: Build iOS ipa
 
 on:
@@ -40,11 +41,15 @@ jobs:
     env:
       TOOLCHAIN: 1.98.1
     steps:
-      - name: Refuse public repositories
+      - name: Public repositories need a strong IPA_PASSWORD
         if: ${{ !github.event.repository.private }}
+        env:
+          PW: ${{ secrets.IPA_PASSWORD }}
         run: |
-          echo "::error::This repository is public. The .ipa holds the game's code and anyone could download it from the run. Make the repository private (Settings > General > Danger Zone), then run this again."
-          exit 1
+          if [ "${#PW}" -lt 16 ]; then
+            echo "::error::This repository is public, so the .ipa (which holds the game's code) is only saved inside an encrypted archive. Set an IPA_PASSWORD secret of at least 16 random characters (Settings > Secrets and variables > Actions), then run this again."
+            exit 1
+          fi
 
       - uses: actions/checkout@v4
 
@@ -112,9 +117,23 @@ jobs:
         if: failure()
         run: tail -50 work/precompile_ios.log 2>/dev/null || true
 
+      - name: Encrypt ipa
+        id: lock
+        env:
+          PW: ${{ secrets.IPA_PASSWORD }}
+        run: |
+          if [ -n "$PW" ]; then
+            7zz a -t7z -mx=0 -mhe=on "-p$PW" -bso0 -bsp0 build/Mush8-ipa.7z build/Mush8.ipa
+            rm build/Mush8.ipa
+            echo "file=build/Mush8-ipa.7z" >> "$GITHUB_OUTPUT"
+          else
+            echo "file=build/Mush8.ipa" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/upload-artifact@v4
         with:
           name: Mush8-ipa
-          path: build/Mush8.ipa
+          path: ${{ steps.lock.outputs.file }}
+          if-no-files-found: error
           retention-days: 3
           compression-level: 0
