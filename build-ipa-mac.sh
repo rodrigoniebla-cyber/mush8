@@ -165,6 +165,15 @@ cargo build --release --locked
 say "Sorting out the game files"
 mkdir -p work/uploads
 for f in "${FILES[@]}"; do
+  if [ -d "$f" ]; then SIZE="$(du -sh "$f" 2>/dev/null | cut -f1 | tr -d ' ')"
+  else SIZE="$(stat -f %z "$f" 2>/dev/null | awk '{printf "%.2f GB", $1 / 1e9}')"; fi
+  echo "  $(basename "$f") ($SIZE)"
+  # iCloud Drive keeps only a placeholder of a file when "Optimize Mac Storage"
+  # is on; copying it then waits, silently, for the whole download.
+  if [ -n "$(find "$f" -flags +dataless 2>/dev/null | head -1)" ]; then
+    echo "    not downloaded from iCloud yet: downloading it now, this can take a while"
+    brctl download "$f" 2>/dev/null || true
+  fi
   # clone on APFS: instant, takes no extra space, and leaves your file alone
   cp -cR "$f" work/uploads/ 2>/dev/null || cp -R "$f" work/uploads/
 done
