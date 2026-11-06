@@ -10,7 +10,7 @@
 # it), or .zip / .rar / .7z archives holding them. Your files are never moved
 # or changed: the build works on instant APFS copies of them.
 #
-# Needs Xcode 26 or newer (from the App Store). Everything else (Rust, XcodeGen,
+# Needs Xcode 26 or newer, any copy of it. Everything else (Rust, XcodeGen,
 # 7-Zip, the source code) goes into one temporary folder that is deleted when
 # the script ends, whether the build worked, failed or you pressed Ctrl-C.
 set -euo pipefail
@@ -27,20 +27,49 @@ die() { printf '\n\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 [ "$(uname -s)" = Darwin ] || die "this script is for macOS"
 
 # --- Xcode -------------------------------------------------------------------
-if ! xcodebuild -version >/dev/null 2>&1; then
-  XCODE="$(ls -d /Applications/Xcode*.app 2>/dev/null | tail -1 || true)"
-  [ -n "$XCODE" ] || die "Xcode isn't installed. Install Xcode 26 or newer from the App Store, open it once, then run this again."
-  export DEVELOPER_DIR="$XCODE/Contents/Developer"
+# Any copy of Xcode works (App Store, a .xip from developer.apple.com, Xcodes,
+# a beta), wherever it is and whatever it's called. The newest one found is
+# used; set MUSH8_XCODE=/path/to/Xcode.app to pick one yourself.
+is_xcode() { [ -x "$1/Contents/Developer/usr/bin/xcodebuild" ] && [ -d "$1/Contents/Developer/Platforms/iPhoneOS.platform" ]; }
+xcode_version() { /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$1/Contents/Info.plist" 2>/dev/null || echo 0; }
+find_xcode() {
+  local a sel
+  {
+    sel="$(xcode-select -p 2>/dev/null || true)"
+    case "$sel" in */Contents/Developer) echo "${sel%/Contents/Developer}" ;; esac
+    mdfind "kMDItemCFBundleIdentifier == 'com.apple.dt.Xcode'" 2>/dev/null || true
+    for a in /Applications/*.app /Applications/*/*.app "$HOME"/Applications/*.app \
+      "$HOME"/Downloads/*.app "$HOME"/Downloads/*/*.app "$HOME"/Desktop/*.app; do
+      echo "$a"
+    done
+  } | while IFS= read -r a; do
+    if is_xcode "$a"; then printf '%s\t%s\n' "$(xcode_version "$a")" "$a"; fi
+  done | sort -t. -k1,1n -k2,2n -k3,3n | tail -1 | cut -f2-
+}
+
+XCODE_APP="${MUSH8_XCODE:-}"
+if [ -z "$XCODE_APP" ]; then XCODE_APP="$(find_xcode)"; fi
+if [ -z "$XCODE_APP" ]; then
+  echo "Couldn't find Xcode on this Mac; choose it in the window that opens."
+  XCODE_APP="$(osascript -e 'POSIX path of (choose file with prompt "Where is Xcode? (Xcode 26 or newer)" of type {"com.apple.application-bundle"} default location (path to applications folder))' 2>/dev/null)" \
+    || die "no Xcode chosen. Xcode 26 or newer is needed (App Store, or a .xip from developer.apple.com/download)."
 fi
-XCODE_VERSION="$(xcodebuild -version | awk 'NR==1 {print $2}')"
-[ "${XCODE_VERSION%%.*}" -ge 26 ] 2>/dev/null || die "Xcode $XCODE_VERSION is too old, Xcode 26 or newer is needed"
-if ! xcodebuild -license check >/dev/null 2>&1; then
+XCODE_APP="${XCODE_APP%/}"
+is_xcode "$XCODE_APP" || die "$XCODE_APP isn't a full Xcode with the iOS SDK"
+export DEVELOPER_DIR="$XCODE_APP/Contents/Developer"
+XCODEBUILD="$DEVELOPER_DIR/usr/bin/xcodebuild"
+XCODE_VERSION="$("$XCODEBUILD" -version | awk 'NR==1 {print $2}')"
+[ "${XCODE_VERSION%%.*}" -ge 26 ] 2>/dev/null \
+  || die "the newest Xcode found is $XCODE_VERSION ($XCODE_APP); Xcode 26 or newer is needed"
+echo "Using Xcode $XCODE_VERSION: $XCODE_APP"
+# sudo drops DEVELOPER_DIR, so these call this Xcode's xcodebuild by path
+if ! "$XCODEBUILD" -license check >/dev/null 2>&1; then
   say "Xcode's license hasn't been accepted yet; accepting it needs your Mac password"
-  sudo xcodebuild -license accept
+  sudo "$XCODEBUILD" -license accept
 fi
-if ! xcodebuild -checkFirstLaunchStatus >/dev/null 2>&1; then
+if ! "$XCODEBUILD" -checkFirstLaunchStatus >/dev/null 2>&1; then
   say "Finishing Xcode's first-launch setup (needs your Mac password)"
-  sudo xcodebuild -runFirstLaunch
+  sudo "$XCODEBUILD" -runFirstLaunch
 fi
 
 # --- pick the game files -----------------------------------------------------
